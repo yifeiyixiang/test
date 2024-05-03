@@ -1,5 +1,190 @@
-echo "hello " ;
-echo "hello2 " ;
-echo "在这里面写上你的脚本代码"
-echo "hello3 " ;
+#!/bin/bash
+#哈小弗哈弗H6二代车机优化脚本！
+function echo_color() {
+        if [ $# -ne 2 ];then
+            #echo "Usage:$0 content {red|pink|yellow|green}"
+            #exit 1
+                echo -e "\033[34m$1\033[0m"
+        elif [ $2 == 'red' ];then
+                echo -e "\033[31m$1\033[0m"
+        elif [ $2 == 'green' ];then
+                echo -e "\033[32m$1\033[0m"
+        elif [ $2 == 'yellow' ];then
+                echo -e "\033[33m$1\033[0m"
+        elif [ $2 == 'blue' ];then
+                echo -e "\033[34m$1\033[0m"
+        elif [ $2 == 'plum' ];then
+                echo -e "\033[35m$1\033[0m"
+        fi
+}
 
+function Env_fix()
+{
+    #Env_fix
+    clear
+    Alpine_Env_Check="/etc/apk/repositories"
+    Termux_Env_Check="/etc/apt/sources.list"
+    CentOS_Env_Check="/etc/redhat-release"
+    echo_color "当前脚本执行环境检测中..."
+    if [  -f "$Alpine_Env_Check"  ];then
+        echo_color "当前为ish Shell Alpine环境，安卓请使用Termux执行本脚本"
+        sleep 1
+        check_dependencies ish
+    elif [  -f "$PREFIX/$Termux_Env_Check"  ];then
+        echo_color "当前为Termux Shell环境，苹果请使用ish Shell执行本脚本"
+        sleep 1
+        check_dependencies termux
+    elif [  -f "$CentOS_Env_Check"  ];then
+        echo_color "当前为CentOS Shell环境，苹果请使用ish Shell、安卓请使用Termux执行本脚本"
+        sleep 1
+        check_dependencies centos
+        exit 0
+    else
+    	sleep 2
+        echo_color "环境异常，自动退出！" red
+        exit 0
+    fi
+    sleep 2
+    echo_color "执行环境已全部通过检测！" green
+    sleep 2
+}
+function check_dependencies() {
+    if ! command -v ip > /dev/null 2>&1 || ! command -v adb > /dev/null 2>&1 || ! command -v wget > /dev/null 2>&1; then
+        echo_color "检测到iproute2、android-tools或wget未安装" yellow
+        sleep 2
+        echo_color "正在安装所需环境包，请等待..."
+        if [[ "$1" == "ish" ]]; then
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
+            cat /etc/apk/repositories |grep "apk.ish.app" && wget -O  /etc/apk/repositories http://car.fa-fa.cc/tmp/ish/ish.tmp
+            apk update && apk add iproute2 android-tools wget >/dev/null 2>&1
+        elif [[ "$1" == "termux" ]]; then
+            sed -i 's@^\(deb.*stable main\)$@#\1\ndeb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main@' $PREFIX/etc/apt/sources.list
+            apt -o DPkg::Options::="--force-confnew"  upgrade -y  >/dev/null 2>&1
+            sed -i 's@^\(deb.*stable main\)$@#\1\ndeb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main@' $PREFIX/etc/apt/sources.list
+            apt update -y  >/dev/null 2>&1
+            pkg install iproute2 android-tools wget -y  >/dev/null 2>&1
+        else
+        	sleep 2
+            echo_color "未知环境请再次确认！" red
+        fi
+    fi
+    sleep 2
+    echo_color "所需环境包已安装！" plum
+}
+
+function Path_fix()
+{
+    #Path_fix
+    cd ~
+    tmpdir=`pwd`
+    Work_Path="$tmpdir/A2"
+    mkdir $Work_Path 2>/dev/null
+    cd $Work_Path
+    pwd
+}
+
+function Adb_Init()
+{
+	if [  -f "$Alpine_Env_Check"  ]; then
+		read -p "请输入车机IP地址：" carip
+	else
+		carip=`ip neigh|head -n 1|awk '{print $1}'`
+	fi
+	if [ ! "$carip" ]; then
+	  echo_color "重新输入IP" red
+	  read -p "输入车机的IP地址确认无误后回车：" carip
+	else
+	  echo_color "获取到车机IP" green
+	fi
+	if [ "$carip" = "1" ]; then
+		carip="192.168.43.1:5578"
+	else
+		carip="$carip:5578"
+	fi
+	echo_color "车机IP为：$carip"
+	echo_color "连接车机中...如卡住请确认车机IP是否正确"
+	export ANDROID_ADB_SERVER_PORT=12888
+	echo_color "尝试连接该IP"
+	while true
+	do
+		str_refused=$(adb connect $carip | grep refused)
+		if [[ $str_refused == "" ]]; then
+			echo_color "adb设备连接测试（拒绝测试）" yellow
+		else
+			echo_color "adb设备连接异常，连接$carip被拒绝，请确认车机IP是否正确,车机U盘是否已经插入并识别。" red
+			read -p "输入车机的IP地址确认无误后回车：" carip
+		fi
+		str_faied=$(adb connect $carip | grep failed)
+		if [[ $str_faied == "" ]]; then
+			echo_color "adb设备连接测试02（失败测试）" yellow
+			break
+		else
+			echo_color "adb设备连接异常，请确认正确ip后手动输入!" red
+			read -p "输入车机的IP地址确认无误后回车：" carip
+		fi
+	done
+	adb connect $carip
+	echo_color "获取权限" yellow
+	adb root
+	echo_color "等待车机连接..." yellow
+	adb wait-for-device
+	echo_color "挂载system" yellow
+	adb remount
+	echo_color "等待车机连接..." yellow
+	adb wait-for-device
+	adb connect $carip
+	echo_color "获取权限" yellow
+	adb root
+	echo_color "等待车机连接..." yellow
+	adb wait-for-device
+	echo_color "挂载system" yellow
+	adb remount
+	echo_color "等待车机连接..." yellow
+	adb wait-for-device
+	str=$(adb devices | grep "\<device\>")
+	if [[ $str != "" ]]; then
+	echo_color "ADB设备连接正常" green
+	else
+	echo_color "网络连接失败！" red
+	exit 0
+	fi
+}
+function Adb_install()
+{
+
+Dudu_Apk="du.apk"
+#DownloadUrl="https://file-qiniu2.dudu-lucky.com/filemanage/2023012215464092c10ee21bc442efaab35ac65e1d5887.apk"
+#ExpectedMd5="5d3dcf67a4ab8dab6491d4d167f17652"
+DownloadUrl="http://xl2.ydyspc.com/com.wow.carlauncher.mini_1.012006_xlhs.com.apk"
+ExpectedMd5="678d451ec9039b802afcb26dc6126e84"
+echo -e "准备下载嘟嘟桌面..."
+wget --progress=bar:force -O "$Dudu_Apk" "$DownloadUrl"
+if [ -f "$Dudu_Apk" ]; then
+    CalculatedMd5=$(md5sum "$Dudu_Apk" | awk '{print $1}')
+	echo $CalculatedMd5
+    if [ "$CalculatedMd5" == "$ExpectedMd5" ]; then
+        echo -e "嘟嘟桌面下载成功，MD5校验通过。\n正在上传..."
+        adb push "$Dudu_Apk" /data/local/tmp/
+		echo -e "上传完成。\n正在准备安装..."
+        adb shell "pm install -g /data/local/tmp/$Dudu_Apk"
+        echo -e "嘟嘟桌面安装成功！\n启动应用..."
+        adb shell "settings put secure install_non_market_apps 1"
+        adb shell "am start -n com.wow.carlauncher.mini/.view.activity.launcher.LauncherActivity"
+        adb shell "rm -rf /data/local/tmp/$Dudu_Apk"
+    else
+        echo -e "MD5校验失败，文件可能已损坏或被篡改。\n删除下载的文件..."
+        rm -f "$Dudu_Apk"
+    fi
+else
+    echo -e "文件下载失败。\n删除下载的文件..."
+    rm -rf "$Dudu_Apk"
+fi
+
+echo -e "脚本执行完毕。"
+exit 0
+}
+
+Path_fix
+Env_fix
+Adb_Init
+Adb_install
